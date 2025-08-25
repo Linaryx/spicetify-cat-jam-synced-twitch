@@ -1,0 +1,19 @@
+{
+  "videos": [
+    {
+      "name": "Cat Jam (По умолчанию)",
+      "url": "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/catjam.webm",
+      "bpm": 135.48
+    },
+    {
+      "name": "Beb",
+      "url": "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/beb.webm",
+      "bpm": 170.00
+    },
+    {
+      "name": "Walter Vibe",
+      "url": "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/waltervibe.webm",
+      "bpm": 122.00
+    }
+  ]
+}

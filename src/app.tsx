@@ -21,6 +21,8 @@ import {
   TEXT_CAT_SECTION,
   ID_CAT_WEBM_LINK,
   LABEL_CAT_WEBM_LINK,
+  ID_CAT_WEBM_CUSTOM_URL,
+  LABEL_CAT_WEBM_CUSTOM_URL,
   ID_CAT_WEBM_BPM,
   LABEL_CAT_WEBM_BPM,
   ID_CAT_WEBM_POSITION,
@@ -63,6 +65,26 @@ const settings = new SettingsSection(
 let audioData;
 let twitchClient: TwitchClient;
 type TrackInfo = { track: string; artist: string; bpm: number };
+
+// Загружаем видео из JSON файла с GitHub
+async function loadDefaultVideos() {
+  try {
+    const response = await fetch('https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/default-videos.json');
+    const data = await response.json();
+    return data.videos || [];
+  } catch (error) {
+    console.error('Ошибка загрузки видео:', error);
+    // Возвращаем дефолтные видео если загрузка не удалась
+    return [
+      { name: "Cat Jam (По умолчанию)", url: "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/catjam.webm", bpm: 135.48 },
+      { name: "Beb", url: "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/beb.webm", bpm: 170.0 },
+      { name: "Walter Vibe", url: "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/waltervibe.webm", bpm: 122.0 }
+    ];
+  }
+}
+
+let defaultVideos: Array<{name: string, url: string, bpm: number}> = [];
+let videoOptions: string[] = [];
 async function getPlaybackRate(audioData) {
   return computePlaybackRate(audioData, settings);
 }
@@ -181,7 +203,27 @@ async function createWebMVideo() {
     let videoURL = String(settings.getFieldValue("catjam-webm-link"));
     if (!videoURL) {
       videoURL =
-        "https://github.com/BlafKing/spicetify-cat-jam-synced/raw/main/src/resources/catjam.webm";
+        "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/catjam.webm";
+    } else {
+      // Если выбрано видео из списка, получаем URL
+      const selectedIndex = parseInt(videoURL);
+      if (!isNaN(selectedIndex) && selectedIndex >= 0 && selectedIndex < defaultVideos.length) {
+        videoURL = defaultVideos[selectedIndex].url;
+      } else if (selectedIndex === defaultVideos.length) {
+        // Если выбрано "Пользовательское", используем пользовательский URL
+        const customURL = String(settings.getFieldValue("catjam-webm-custom-url") || "");
+        if (customURL && customURL.startsWith("http")) {
+          videoURL = customURL;
+        } else {
+          videoURL = "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/catjam.webm";
+        }
+      } else if (videoURL.startsWith("http")) {
+        // Если это уже URL, используем как есть
+        videoURL = videoURL;
+      } else {
+        // Если это не число и не URL, используем дефолтное видео
+        videoURL = "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/catjam.webm";
+      }
     }
 
     const videoElement = document.createElement("video");
@@ -339,6 +381,11 @@ async function main() {
   while (!Spicetify?.Player?.addEventListener || !Spicetify?.getAudioData) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+  
+  // Загружаем видео из JSON файла
+  defaultVideos = await loadDefaultVideos();
+  videoOptions = [...defaultVideos.map(video => video.name), "Пользовательское"];
+  
   let audioData;
 
   // Create Settings UI - Cat (on top)
@@ -348,7 +395,13 @@ async function main() {
     TEXT_CAT_SECTION,
     () => {},
   );
-  settings.addInput(ID_CAT_WEBM_LINK, LABEL_CAT_WEBM_LINK, "");
+  settings.addDropDown(
+    ID_CAT_WEBM_LINK,
+    LABEL_CAT_WEBM_LINK,
+    videoOptions,
+    0,
+  );
+  settings.addInput(ID_CAT_WEBM_CUSTOM_URL, LABEL_CAT_WEBM_CUSTOM_URL, "");
   settings.addInput(ID_CAT_WEBM_BPM, LABEL_CAT_WEBM_BPM, "");
   settings.addDropDown(
     ID_CAT_WEBM_POSITION,
@@ -467,6 +520,47 @@ async function main() {
   );
 
   settings.pushSettings();
+  
+  // Добавляем обработчик для автоматического заполнения BPM при выборе видео
+  setTimeout(() => {
+    const videoSelect = document.getElementById(
+      "catjam-settings." + ID_CAT_WEBM_LINK,
+    ) as HTMLSelectElement | null;
+    const bpmInput = document.getElementById(
+      "catjam-settings." + ID_CAT_WEBM_BPM,
+    ) as HTMLInputElement | null;
+    
+    if (videoSelect && bpmInput) {
+      videoSelect.addEventListener("change", () => {
+        const selectedIndex = videoSelect.selectedIndex;
+        if (selectedIndex >= 0 && selectedIndex < defaultVideos.length) {
+          const selectedVideo = defaultVideos[selectedIndex];
+          bpmInput.value = selectedVideo.bpm.toString();
+          // Сохраняем индекс выбранного видео
+          settings.setFieldValue(ID_CAT_WEBM_LINK, selectedIndex.toString());
+        } else if (selectedIndex === defaultVideos.length) {
+          // Если выбрано "Пользовательское", очищаем BPM
+          bpmInput.value = "";
+          settings.setFieldValue(ID_CAT_WEBM_LINK, selectedIndex.toString());
+        }
+      });
+      
+      // Устанавливаем начальное значение, если оно сохранено
+      const savedIndex = String(settings.getFieldValue(ID_CAT_WEBM_LINK) || "");
+      if (savedIndex && !isNaN(parseInt(savedIndex))) {
+        const index = parseInt(savedIndex);
+        if (index >= 0 && index < defaultVideos.length) {
+          videoSelect.selectedIndex = index;
+          const selectedVideo = defaultVideos[index];
+          bpmInput.value = selectedVideo.bpm.toString();
+        } else if (index === defaultVideos.length) {
+          videoSelect.selectedIndex = index;
+          bpmInput.value = "";
+        }
+      }
+    }
+  }, 1000);
+
   const applyInitialStyles = () => {
     const statusBtn = document.getElementById(
       "catjam-settings." + ID_TWITCH_STATUS_INDICATOR,

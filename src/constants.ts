@@ -7,7 +7,7 @@ export const SELECTOR_ARTIST_NAME = ".main-trackInfo-artists a";
 export const SELECTOR_LEFT_LIBRARY = ".main-yourLibraryX-libraryItemContainer";
 
 export const CATJAM_VIDEO_URL =
-  "https://github.com/BlafKing/spicetify-cat-jam-synced/raw/main/src/resources/catjam.webm";
+  "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/catjam.webm";
 
 export const SETTINGS_SECTION_TITLE = "Настройки Cat-Jam";
 export const SETTINGS_SECTION_ID = "catjam-settings";
@@ -55,7 +55,11 @@ export const TEXT_CAT_SECTION = "———————";
 
 export const ID_CAT_WEBM_LINK = "catjam-webm-link";
 export const LABEL_CAT_WEBM_LINK =
-  "Ссылка на пользовательское webM видео (ссылка не работает, если видео не отображается)";
+  "Выберите видео для отображения";
+
+export const ID_CAT_WEBM_CUSTOM_URL = "catjam-webm-custom-url";
+export const LABEL_CAT_WEBM_CUSTOM_URL =
+  "Пользовательская ссылка на webM видео (если выбрано 'Пользовательское')";
 
 export const ID_CAT_WEBM_BPM = "catjam-webm-bpm";
 export const LABEL_CAT_WEBM_BPM =
