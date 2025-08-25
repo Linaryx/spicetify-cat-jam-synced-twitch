@@ -1,304 +1,575 @@
 import { SettingsSection } from "spcr-settings";
-const settings = new SettingsSection("Cat-Jam Settings", "catjam-settings");
+import TwitchClient from "./services/twitch/client";
+import { getTrackFromDom } from "./utils/track";
+import { computePlaybackRate } from "./services/bpm";
+import { waitForElement } from "./utils/dom";
+import {
+  SETTINGS_SECTION_TITLE,
+  SETTINGS_SECTION_ID,
+  POSITION_OPTIONS,
+  BPM_METHOD_OPTIONS,
+  DEFAULT_LEFT_LIBRARY_SIZE,
+  VIDEO_STYLE_BOTTOM,
+  STYLE_DARK_BUTTON,
+  STYLE_RECONNECT_BUTTON,
+  STYLE_HEADER_CAT,
+  STYLE_HEADER_TWITCH,
+  STATUS_CONNECTED_TEXT,
+  STATUS_DISCONNECTED_TEXT,
+  ID_CAT_SECTION,
+  TITLE_CAT_SECTION,
+  TEXT_CAT_SECTION,
+  ID_CAT_WEBM_LINK,
+  LABEL_CAT_WEBM_LINK,
+  ID_CAT_WEBM_BPM,
+  LABEL_CAT_WEBM_BPM,
+  ID_CAT_WEBM_POSITION,
+  LABEL_CAT_WEBM_POSITION,
+  ID_CAT_BPM_METHOD_SLOW,
+  LABEL_CAT_BPM_METHOD_SLOW,
+  ID_CAT_BPM_METHOD_FAST,
+  LABEL_CAT_BPM_METHOD_FAST,
+  ID_CAT_LEFT_SIZE,
+  LABEL_CAT_LEFT_SIZE,
+  ID_CAT_RELOAD,
+  TITLE_CAT_RELOAD,
+  TEXT_CAT_RELOAD,
+  ID_TWITCH_SECTION,
+  TITLE_TWITCH_SECTION,
+  TEXT_TWITCH_SECTION,
+  ID_TWITCH_TOKEN,
+  LABEL_TWITCH_TOKEN,
+  ID_TWITCH_CHANNEL,
+  LABEL_TWITCH_CHANNEL,
+  ID_TWITCH_ENABLED,
+  LABEL_TWITCH_ENABLED,
+  ID_TWITCH_MESSAGE_DELAY,
+  LABEL_TWITCH_MESSAGE_DELAY,
+  ID_TWITCH_MESSAGE_FORMAT,
+  LABEL_TWITCH_MESSAGE_FORMAT,
+  ID_TWITCH_BPM_VALUES,
+  LABEL_TWITCH_BPM_VALUES,
+  ID_TWITCH_STATUS_INDICATOR,
+  TITLE_TWITCH_STATUS_INDICATOR,
+  ID_TWITCH_RECONNECT,
+  TITLE_TWITCH_RECONNECT,
+  TEXT_TWITCH_RECONNECT,
+} from "./constants";
+
+const settings = new SettingsSection(
+  SETTINGS_SECTION_TITLE,
+  SETTINGS_SECTION_ID,
+);
 let audioData;
-
-// Function to adjust the video playback rate based on the current track's BPM
+let twitchClient: TwitchClient;
+type TrackInfo = { track: string; artist: string; bpm: number };
 async function getPlaybackRate(audioData) {
-    let videoDefaultBPM = Number(settings.getFieldValue("catjam-webm-bpm"));
-    console.log(videoDefaultBPM);
-    if (!videoDefaultBPM) {
-        videoDefaultBPM = 135.48;
-    }
-
-    if (audioData && audioData?.track) {
-        let trackBPM = audioData?.track?.tempo  // BPM of the current track
-        let bpmMethod = settings.getFieldValue("catjam-webm-bpm-method");
-        let bpmToUse = trackBPM;
-        if (bpmMethod !== "Track BPM") {
-            console.log("[CAT-JAM] Using danceability, energy and track BPM to calculate better BPM");
-            bpmToUse = await getBetterBPM(trackBPM);
-            console.log("[CAT-JAM] Better BPM:", bpmToUse)
-        }
-        let playbackRate = 1;
-        if (bpmToUse) {
-            playbackRate = bpmToUse / videoDefaultBPM;
-        }
-        console.log("[CAT-JAM] Track BPM:", trackBPM)
-        console.log("[CAT-JAM] Cat jam synchronized, playback rate set to:", playbackRate)
-
-        return playbackRate; // Return the calculated playback rate
-    } else {
-        console.warn("[CAT-JAM] BPM data not available for this track, cat will not be jamming accurately :(");
-        return 1; // Return default playback rate if BPM data is not available
-    }
+  return computePlaybackRate(audioData, settings);
 }
-
-// Function that fetches audio data from "wg://audio-attributes/v1/audio-analysis/" with retry handling
 async function fetchAudioData(retryDelay = 200, maxRetries = 10) {
-    try {
-        let audioData = await Spicetify.getAudioData();
-        return audioData;
-    } catch (error) {
-        if (typeof error === "object" && error !== null && 'message' in error) {
-            const message = error.message;
-            
-            if (message.includes("Cannot read properties of undefined") && maxRetries > 0) {
-                console.log("[CAT-JAM] Retrying to fetch audio data...");
-                await new Promise(resolve => setTimeout(resolve, retryDelay));
-                return fetchAudioData(retryDelay, maxRetries - 1); // Retry fetching audio data
-            }
-        } else {
-            console.warn(`[CAT-JAM] Error fetching audio data: ${error}`);
-        }
-        return null; // Return default playback rate on failure
-    }
+  try {
+    const data = await Spicetify.getAudioData();
+    return data;
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "message" in error) {
+      const message = error.message;
+
+      if (
+        message.includes("Cannot read properties of undefined") &&
+        maxRetries > 0
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+        return fetchAudioData(retryDelay, maxRetries - 1);
+      }
+    } else { void 0; }
+    return null;
+  }
 }
 
-// Function to synchronize video playback timing with the music's beats
+async function getCurrentTrackInfo(): Promise<TrackInfo> {
+  let { track: trackName, artist: artistName } = getTrackFromDom();
+  let trackBPM = 120;
+
+  if (trackName === "Unknown Track") {
+    const playerData = Spicetify.Player.data;
+    if (playerData?.item) {
+      trackName = playerData.item.name || trackName;
+      artistName = playerData.item.artists?.[0]?.name || artistName;
+    }
+  }
+
+  try {
+    const data = await fetchAudioData();
+    if (data?.track?.tempo) {
+      trackBPM = data.track.tempo;
+    }
+  } catch (_error) { void 0; }
+
+  return { track: trackName, artist: artistName, bpm: trackBPM };
+}
+
+async function sendCurrentTrackIfNeeded(force = false): Promise<void> {
+  if (!twitchClient || !twitchClient.isConnectedToTwitch()) return;
+  const info = await getCurrentTrackInfo();
+  const trackChanged =
+    lastTrackInfo.track !== info.track || lastTrackInfo.artist !== info.artist;
+  if (force || !lastMessageSent || trackChanged) {
+    await sendTrackInfoToTwitch(info.track, info.artist, info.bpm);
+  }
+}
+
 async function syncTiming(startTime, progress) {
-    const videoElement = document.getElementById('catjam-webm') as HTMLVideoElement;
-    if (videoElement) {
-        if (Spicetify.Player.isPlaying()) {
-            progress = progress / 1000; // Convert progress from milliseconds to seconds
+  const videoElement = document.getElementById(
+    "catjam-webm",
+  ) as HTMLVideoElement;
+  if (videoElement) {
+    if (Spicetify.Player.isPlaying()) {
+      progress = progress / 1000;
 
-            if (audioData && audioData.beats) {
-                // Find the nearest upcoming beat based on current progress
-                const upcomingBeat = audioData.beats.find(beat => beat.start > progress);
-                if (upcomingBeat) {
-                    const operationTime = performance.now() - startTime; // Time taken for the operation
-                    const delayUntilNextBeat = Math.max(0, (upcomingBeat.start - progress) * 1000 - operationTime); // Calculate delay until the next beat
-                    
-                    setTimeout(() => {
-                        videoElement.currentTime = 0; // Reset video to start
-                        videoElement.play(); // Play the video
-                    }, delayUntilNextBeat);
-                } else {
-                    videoElement.currentTime = 0; // Reset video to start if no upcoming beat
-                    videoElement.play();
-                }
-                console.log("[CAT-JAM] Resynchronized to nearest beat");
-            } else {
-                videoElement.currentTime = 0; // Play the video without delay if no beat information
-                videoElement.play();
-            }
-        } else {
-            videoElement.pause(); // Pause the video if Spotify is not playing
-        }
-    } else {
-        console.error("[CAT-JAM] Video element not found.");
-    }
-}
+      if (audioData && audioData.beats) {
+        const upcomingBeat = audioData.beats.find(
+          (beat) => beat.start > progress,
+        );
+        if (upcomingBeat) {
+          const operationTime = performance.now() - startTime;
+          const delayUntilNextBeat = Math.max(
+            0,
+            (upcomingBeat.start - progress) * 1000 - operationTime,
+          );
 
-// Function to wait for a specific DOM element to appear before proceeding
-async function waitForElement(selector, maxAttempts = 50, interval = 100) {
-    let attempts = 0;
-    while (attempts < maxAttempts) {
-        const element = document.querySelector(selector); // Attempt to find the element
-        if (element) {
-            return element; // Return the element if found
-        }
-        await new Promise(resolve => setTimeout(resolve, interval)); // Wait for a specified interval before trying again
-        attempts++;
-    }
-    throw new Error(`Element ${selector} not found after ${maxAttempts} attempts.`); // Throw error if element not found within attempts
-}
-
-// Function that creates the WebM video and sets initial BPM and play state
-async function createWebMVideo() {
-    try {
-        const bottomPlayerClass = '.main-nowPlayingBar-right' // Selector for the bottom player
-        const leftLibraryClass = '.main-yourLibraryX-libraryItemContainer' // Selector for the left library
-        let leftLibraryVideoSize = Number(settings.getFieldValue("catjam-webm-position-left-size")); // Get the left library video size
-        if (!leftLibraryVideoSize) {
-            leftLibraryVideoSize = 100; // Default size of the video on the left library
-        }
-        const bottomPlayerStyle = 'width: 65px; height: 65px;'; // Style for the bottom player video
-        let leftLibraryStyle = `width: ${leftLibraryVideoSize}%; max-width: 300px; height: auto; max-height: 100%; position: absolute; bottom: 0; pointer-events: none; z-index: 1;` // Style for the left library video
-        let selectedPosition = settings.getFieldValue("catjam-webm-position"); // Get the selected position for the video
-
-        let targetElementSelector = selectedPosition === 'Bottom (Player)' ? bottomPlayerClass : leftLibraryClass;
-        let elementStyles = selectedPosition === 'Bottom (Player)' ? bottomPlayerStyle : leftLibraryStyle;
-        const targetElement = await waitForElement(targetElementSelector); // Wait until the target element is available
-
-        // Remove any existing video element to avoid duplicates
-        const existingVideo = document.getElementById('catjam-webm');
-        if (existingVideo) {
-            existingVideo.remove();
-        }
-        
-        //
-        let videoURL = String(settings.getFieldValue("catjam-webm-link"));
-        
-        if (!videoURL) {
-            videoURL = "https://github.com/BlafKing/spicetify-cat-jam-synced/raw/main/src/resources/catjam.webm"
-        }
-
-        // Create a new video element to be inserted
-        const videoElement = document.createElement('video');
-        videoElement.setAttribute('loop', 'true'); // Video loops continuously
-        videoElement.setAttribute('autoplay', 'true'); // Video starts automatically
-        videoElement.setAttribute('muted', 'true'); // Video is muted
-        videoElement.setAttribute('style', elementStyles);
-        videoElement.src = videoURL; // Set the source of the video
-        videoElement.id = 'catjam-webm'; // Assign an ID to the video element
-
-        audioData = await fetchAudioData(); // Fetch audio data
-        videoElement.playbackRate = await getPlaybackRate(audioData); // Adjust playback rate based on the song's BPM
-        // Insert the video element into the target element in the DOM
-        if (targetElement.firstChild) {
-            targetElement.insertBefore(videoElement, targetElement.firstChild);
-        } else {
-            targetElement.appendChild(videoElement);
-        }
-        // Control video playback based on whether Spotify is currently playing music
-        if (Spicetify.Player.isPlaying()) {
+          setTimeout(() => {
+            videoElement.currentTime = 0;
             videoElement.play();
+          }, delayUntilNextBeat);
         } else {
-            videoElement.pause();
+          videoElement.currentTime = 0;
+          videoElement.play();
         }
-    } catch (error) {
-        console.error("[CAT-JAM] Could not create cat-jam video element: ", error);
+      } else {
+        videoElement.currentTime = 0;
+        videoElement.play();
+      }
+    } else {
+      videoElement.pause();
     }
+  } else { void 0; }
 }
 
-async function getBetterBPM(currentBPM) {
-    let betterBPM = currentBPM
-    try {
-        const currentSongDataUri = Spicetify.Player.data?.item?.uri;
-        if (!currentSongDataUri) {
-            setTimeout(getBetterBPM, 200);
-            return;
-        }
-        const uriFinal = currentSongDataUri.split(":")[2];
-        const res = await Spicetify.CosmosAsync.get("https://api.spotify.com/v1/audio-features/" + uriFinal);
-        const danceability = Math.round(100 * res.danceability);
-        const energy = Math.round(100 * res.energy);
-        betterBPM = calculateBetterBPM(danceability, energy, currentBPM)
-    } catch (error) {
-        console.error("[CAT-JAM] Could not get audio features: ", error);
-    } finally {
-        return betterBPM;
+async function createWebMVideo() {
+  try {
+    const bottomPlayerClass = ".main-nowPlayingBar-right";
+    const leftLibraryClass = ".main-yourLibraryX-libraryItemContainer";
+    const leftLibraryVideoSize =
+      Number(settings.getFieldValue("catjam-webm-position-left-size")) ||
+      DEFAULT_LEFT_LIBRARY_SIZE;
+    const bottomPlayerStyle = VIDEO_STYLE_BOTTOM;
+    const leftLibraryStyle = `width: ${leftLibraryVideoSize}%; max-width: 300px; height: auto; max-height: 100%; position: absolute; bottom: 0; pointer-events: none; z-index: 1;`;
+    const selectedPosition = settings.getFieldValue("catjam-webm-position");
+    const targetElementSelector =
+      selectedPosition === POSITION_OPTIONS[0]
+        ? bottomPlayerClass
+        : leftLibraryClass;
+    const elementStyles =
+      selectedPosition === POSITION_OPTIONS[0]
+        ? bottomPlayerStyle
+        : leftLibraryStyle;
+    const targetElement = await waitForElement(targetElementSelector);
+
+    const existingVideo = document.getElementById("catjam-webm");
+    if (existingVideo) existingVideo.remove();
+
+    let videoURL = String(settings.getFieldValue("catjam-webm-link"));
+    if (!videoURL) {
+      videoURL =
+        "https://github.com/BlafKing/spicetify-cat-jam-synced/raw/main/src/resources/catjam.webm";
     }
+
+    const videoElement = document.createElement("video");
+    videoElement.setAttribute("loop", "true");
+    videoElement.setAttribute("autoplay", "true");
+    videoElement.setAttribute("muted", "true");
+    videoElement.setAttribute("style", elementStyles);
+    videoElement.src = videoURL;
+    videoElement.id = "catjam-webm";
+
+    audioData = await fetchAudioData();
+    videoElement.playbackRate = await getPlaybackRate(audioData);
+
+    if (targetElement.firstChild) {
+      targetElement.insertBefore(videoElement, targetElement.firstChild);
+    } else {
+      targetElement.appendChild(videoElement);
+    }
+    if (Spicetify.Player.isPlaying()) {
+      videoElement.play();
+    } else {
+      videoElement.pause();
+    }
+  } catch (_error) { void 0; }
 }
 
-// Function to calculate a better BPM based on danceability and energy
-function calculateBetterBPM(danceability, energy, currentBPM) {
-    let danceabilityWeight = 0.9;
-    let energyWeight = 0.6;
-    let bpmWeight = 0.6;
-    const energyTreshold = 0.5;
-    let danceabilityTreshold = 0.5;
-    const maxBPM = 100;
-    let bpmThreshold = 0.8; // 80 bpm
+// Global state for tracking message status
+let lastMessageSent = false;
+let lastTrackInfo = { track: "", artist: "", bpm: 0 };
+let bpmCommandCooldown = 0;
 
-    const normalizedBPM = currentBPM / 100;
-    const normalizedDanceability = danceability / 100;
-    const normalizedEnergy = energy / 100;
-
-    if (normalizedDanceability < danceabilityTreshold){
-        danceabilityWeight *= normalizedDanceability;
-    }
-
-    if (normalizedEnergy < energyTreshold){
-        energyWeight *= normalizedEnergy;
-    }
-    // increase bpm weight if the song is slow
-    if (normalizedBPM < bpmThreshold){
-        bpmWeight = 0.9;
-    }
-
-    const weightedAverage = (normalizedDanceability * danceabilityWeight + normalizedEnergy * energyWeight + normalizedBPM * bpmWeight) / (1 - danceabilityWeight + 1 - energyWeight + bpmWeight);
-    let betterBPM = weightedAverage * maxBPM;
-
-    console.log({danceabilityWeight, energyWeight, currentBPM, weightedAverage, betterBPM, bpmWeight})
-
-    const betterBPMForFasterSongs = settings.getFieldValue("catjam-webm-bpm-method-faster-songs") !== "Track BPM";
-    if (betterBPM > currentBPM) {
-        if (betterBPMForFasterSongs){
-            betterBPM = (betterBPM + currentBPM) / 2;
-        } else {
-            betterBPM = currentBPM;
-        }
-    }
-
-    if (betterBPM < currentBPM) {
-        betterBPM = Math.max(betterBPM, 70);
-    }
-
-    return betterBPM;
-}
-
-// Main function to initialize and manage the Spicetify app extension
-async function main() {
-    // Continuously check until the Spicetify Player and audio data APIs are available
-    while (!Spicetify?.Player?.addEventListener || !Spicetify?.getAudioData) {
-        await new Promise(resolve => setTimeout(resolve, 100)); // Wait for 100ms before checking again
-    }
-    console.log("[CAT-JAM] Extension loaded.");
-    let audioData; // Initialize audio data variable
-
-    // Create Settings UI
-    settings.addInput("catjam-webm-link", "Custom webM video URL (Link does not work if no video shows)", "");
-    settings.addInput("catjam-webm-bpm", "Custom default BPM of webM video (Example: 135.48)", "");
-    settings.addDropDown("catjam-webm-position", "Position where webM video should be rendered", ['Bottom (Player)', 'Left (Library)'], 0);
-    settings.addDropDown("catjam-webm-bpm-method", "Method to calculate better BPM for slower songs", ['Track BPM', 'Danceability, Energy and Track BPM'], 0);
-    settings.addDropDown("catjam-webm-bpm-method-faster-songs", "Method to calculate better BPM for faster songs", ['Track BPM', 'Danceability, Energy and Track BPM'], 0);
-    settings.addInput("catjam-webm-position-left-size", "Size of webM video on the left library (Only works for left library, Default: 100)", "");
-    settings.addButton("catjam-reload", "Reload custom values", "Save and reload", () => {createWebMVideo();});
-    settings.pushSettings();
-
-    // Create initial WebM video
-    createWebMVideo();
-
-    Spicetify.Player.addEventListener("onplaypause", async () => {
-        const startTime = performance.now();
-        let progress = Spicetify.Player.getProgress();
-        lastProgress = progress;
-        syncTiming(startTime, progress); // Synchronize video timing with the current progress
-    });
-    
-    let lastProgress = 0; // Initialize last known progress
-    Spicetify.Player.addEventListener("onprogress", async () => {
-        const currentTime = performance.now();
-        let progress = Spicetify.Player.getProgress();
-        
-        // Check if a significant skip in progress has occurred or if a significant time has passed
-        if (Math.abs(progress - lastProgress) >= 500) {
-            syncTiming(currentTime, progress); // Synchronize video timing again
-        }
-        lastProgress = progress; // Update last known progress
-    });
-
-    Spicetify.Player.addEventListener("songchange", async () => {
-        const startTime = performance.now(); // Record the start time for the operation
-        lastProgress = Spicetify.Player.getProgress();
-
-        const videoElement = document.getElementById('catjam-webm')as HTMLVideoElement;
-        if (videoElement) {
-            audioData = await fetchAudioData(); // Fetch current audio data
-            console.log("[CAT-JAM] Audio data fetched:", audioData);
-            if (audioData && audioData.beats && audioData.beats.length > 0) {
-                const firstBeatStart = audioData.beats[0].start; // Get start time of the first beat
-                
-                // Adjust video playback rate based on the song's BPM
-                videoElement.playbackRate = await getPlaybackRate(audioData);
-    
-                const operationTime = performance.now() - startTime; // Calculate time taken for operations
-                const delayUntilFirstBeat = Math.max(0, firstBeatStart * 1000 - operationTime); // Calculate delay until the first beat
-    
-                setTimeout(() => {
-                    videoElement.currentTime = 0; // Ensure video starts from the beginning
-                    videoElement.play(); // Play the video
-                }, delayUntilFirstBeat);
-            } else {
-                videoElement.playbackRate = await getPlaybackRate(audioData); // Set playback rate even if no beat information
-                videoElement.currentTime = 0; // Ensure video starts from the beginning
-                videoElement.play(); // Play the video
+async function sendTrackInfoToTwitch(
+  track: string,
+  artist: string,
+  bpm: number,
+): Promise<void> {
+  if (twitchClient && twitchClient.isConnectedToTwitch()) {
+    const ok = await twitchClient.sendTrackInfo(track, artist, bpm);
+    if (ok) {
+      lastMessageSent = true;
+      lastTrackInfo = { track, artist, bpm };
+    } else {
+      try {
+        const delayMs =
+          parseInt(String(settings.getFieldValue("twitch-message-delay"))) ||
+          5000;
+        setTimeout(
+          async () => {
+            const retryOk = await twitchClient.sendTrackInfo(
+              track,
+              artist,
+              bpm,
+            );
+            if (retryOk) {
+              lastMessageSent = true;
+              lastTrackInfo = { track, artist, bpm };
             }
-        } else {
-            console.error("[CAT-JAM] Video element not found.");
-        }
+          },
+          Math.min(delayMs, 5000),
+        );
+      } catch (_error) { void 0; }
+    }
+  }
+}
+
+async function handleBpmCommand(): Promise<void> {
+  const now = Date.now();
+  if (now - bpmCommandCooldown < 60000) return;
+
+  if (lastMessageSent && lastTrackInfo.track !== "") {
+    await twitchClient.sendTrackInfo(
+      lastTrackInfo.track,
+      lastTrackInfo.artist,
+      lastTrackInfo.bpm,
+    );
+    bpmCommandCooldown = now;
+  } else { void 0; }
+}
+
+async function main() {
+  while (!Spicetify?.Player?.addEventListener || !Spicetify?.getAudioData) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  let audioData;
+
+  // Create Settings UI - Cat (on top)
+  settings.addButton(
+    ID_CAT_SECTION,
+    TITLE_CAT_SECTION,
+    TEXT_CAT_SECTION,
+    () => {},
+  );
+  settings.addInput(ID_CAT_WEBM_LINK, LABEL_CAT_WEBM_LINK, "");
+  settings.addInput(ID_CAT_WEBM_BPM, LABEL_CAT_WEBM_BPM, "");
+  settings.addDropDown(
+    ID_CAT_WEBM_POSITION,
+    LABEL_CAT_WEBM_POSITION,
+    POSITION_OPTIONS,
+    0,
+  );
+  settings.addDropDown(
+    ID_CAT_BPM_METHOD_SLOW,
+    LABEL_CAT_BPM_METHOD_SLOW,
+    BPM_METHOD_OPTIONS,
+    0,
+  );
+  settings.addDropDown(
+    ID_CAT_BPM_METHOD_FAST,
+    LABEL_CAT_BPM_METHOD_FAST,
+    BPM_METHOD_OPTIONS,
+    0,
+  );
+  settings.addInput(ID_CAT_LEFT_SIZE, LABEL_CAT_LEFT_SIZE, "");
+  settings.addButton(ID_CAT_RELOAD, TITLE_CAT_RELOAD, TEXT_CAT_RELOAD, () => {
+    createWebMVideo();
+  });
+  settings.addButton(
+    ID_TWITCH_SECTION,
+    TITLE_TWITCH_SECTION,
+    TEXT_TWITCH_SECTION,
+    () => {},
+  );
+  settings.addInput(ID_TWITCH_TOKEN, LABEL_TWITCH_TOKEN, "");
+  settings.addInput(ID_TWITCH_CHANNEL, LABEL_TWITCH_CHANNEL, "");
+  settings.addToggle(ID_TWITCH_ENABLED, LABEL_TWITCH_ENABLED, false);
+  settings.addInput(
+    ID_TWITCH_MESSAGE_DELAY,
+    LABEL_TWITCH_MESSAGE_DELAY,
+    "5000",
+  );
+  settings.addInput(
+    ID_TWITCH_MESSAGE_FORMAT,
+    LABEL_TWITCH_MESSAGE_FORMAT,
+    "{track} - {artist} | BPM: {bpm} | Nearest {nearest_bpm}",
+  );
+  settings.addInput(
+    ID_TWITCH_BPM_VALUES,
+    LABEL_TWITCH_BPM_VALUES,
+    "80,100,110,120,130,140,150,160,170,180",
+  );
+  settings.addButton(
+    ID_TWITCH_STATUS_INDICATOR,
+    TITLE_TWITCH_STATUS_INDICATOR,
+    "\uD83D\uDD34 Disconnected",
+    () => {},
+  );
+  let lastConnected = false;
+  const darkButtonStyle = STYLE_DARK_BUTTON;
+  const applyStatusToUi = () => {
+    const btn = document.getElementById(
+      "catjam-settings." + ID_TWITCH_STATUS_INDICATOR,
+    ) as HTMLButtonElement | null;
+    if (!btn) return false;
+    btn.textContent = lastConnected
+      ? STATUS_CONNECTED_TEXT
+      : STATUS_DISCONNECTED_TEXT;
+    btn.setAttribute("style", darkButtonStyle);
+    return true;
+  };
+  const setStatus = (connected: boolean) => {
+    lastConnected = connected;
+    if (!applyStatusToUi()) {
+      setTimeout(applyStatusToUi, 1000);
+      setTimeout(applyStatusToUi, 10000);
+      setTimeout(applyStatusToUi, 20000);
+    }
+  };
+
+  settings.addButton(
+    ID_TWITCH_RECONNECT,
+    TITLE_TWITCH_RECONNECT,
+    TEXT_TWITCH_RECONNECT,
+    () => {
+      if (!twitchClient) return;
+      const token = String(settings.getFieldValue(ID_TWITCH_TOKEN) || "");
+      const channel = String(settings.getFieldValue(ID_TWITCH_CHANNEL) || "");
+      const enabled = Boolean(settings.getFieldValue(ID_TWITCH_ENABLED));
+      const delay =
+        parseInt(String(settings.getFieldValue(ID_TWITCH_MESSAGE_DELAY))) ||
+        5000;
+      const format = String(
+        settings.getFieldValue(ID_TWITCH_MESSAGE_FORMAT) || "",
+      );
+      const bpmValues = String(
+        settings.getFieldValue(ID_TWITCH_BPM_VALUES) ||
+          "80,100,110,120,130,140,150,160,170,180",
+      );
+
+      twitchClient.updateConfig({
+        token,
+        channel,
+        enabled,
+        message_delay: delay,
+        message_format: format,
+        bpm_values: bpmValues,
+      });
+
+      try {
+        (twitchClient as any).disconnect?.();
+      } catch (_error) { void 0; }
+      twitchClient
+        .connect()
+        .then((ok) => setStatus(ok))
+        .catch(() => setStatus(false));
+    },
+  );
+
+  settings.pushSettings();
+  setTimeout(() => {
+    const statusBtn = document.getElementById(
+      "catjam-settings." + ID_TWITCH_STATUS_INDICATOR,
+    ) as HTMLButtonElement | null;
+    if (statusBtn) statusBtn.setAttribute("style", darkButtonStyle);
+    const catDivider = document.getElementById(
+      "catjam-settings." + ID_CAT_SECTION,
+    ) as HTMLButtonElement | null;
+    if (catDivider) catDivider.setAttribute("style", STYLE_HEADER_CAT);
+    const twitchDivider = document.getElementById(
+      "catjam-settings." + ID_TWITCH_SECTION,
+    ) as HTMLButtonElement | null;
+    if (twitchDivider) twitchDivider.setAttribute("style", STYLE_HEADER_TWITCH);
+    const reconnectBtn = document.getElementById(
+      "catjam-settings." + ID_TWITCH_RECONNECT,
+    ) as HTMLButtonElement | null;
+    if (reconnectBtn) {
+      reconnectBtn.setAttribute("style", STYLE_RECONNECT_BUTTON);
+      try {
+        reconnectBtn.addEventListener("mouseenter", () => {
+          reconnectBtn.style.backgroundColor = "#0a0a0a";
+        });
+        reconnectBtn.addEventListener("mouseleave", () => {
+          reconnectBtn.style.backgroundColor = "#000";
+        });
+        reconnectBtn.addEventListener("focus", () => {
+          reconnectBtn.style.outline = "none";
+          reconnectBtn.style.boxShadow = "0 0 0 3px rgba(255,255,255,0.15)";
+        });
+        reconnectBtn.addEventListener("blur", () => {
+          reconnectBtn.style.boxShadow = "";
+        });
+      } catch (_error) { void 0; }
+    }
+    applyStatusToUi();
+  }, 0);
+
+  try {
+    const container = document.getElementById(settings.settingsId);
+    if (container) {
+      const observer = new MutationObserver(() => {
+        applyStatusToUi();
+      });
+      observer.observe(container, { childList: true, subtree: true });
+      setTimeout(() => observer.disconnect(), 5000);
+    }
+  } catch (_error) { void 0; }
+
+  try {
+    const refreshInterval = setInterval(applyStatusToUi, 500);
+    setTimeout(() => clearInterval(refreshInterval), 5000);
+  } catch (_error) { void 0; }
+
+  twitchClient = new TwitchClient();
+  twitchClient.setStatusCallback(setStatus);
+  setStatus(false);
+  try {
+    window.addEventListener("catjam:twitch-status", (e: any) => {
+      setStatus(Boolean(e?.detail?.connected));
     });
+  } catch (_error) { void 0; }
+  const saved = twitchClient.getConfig();
+  if (saved) {
+    settings.setFieldValue("twitch-token", saved.token || "");
+    settings.setFieldValue("twitch-channel", saved.channel || "");
+    settings.setFieldValue("twitch-enabled", Boolean(saved.enabled));
+    settings.setFieldValue(
+      "twitch-message-delay",
+      String(saved.message_delay ?? 5000),
+    );
+    settings.setFieldValue("twitch-message-format", saved.message_format || "");
+    settings.setFieldValue(
+      "twitch-bpm-values",
+      saved.bpm_values || "80,100,110,120,130,140,150,160,170,180",
+    );
+  }
+  if (saved?.enabled && saved.token && saved.channel) {
+    const ok = await twitchClient.connect();
+    setStatus(!!ok);
+    if (ok && Spicetify.Player.isPlaying()) {
+      await sendCurrentTrackIfNeeded(false);
+    }
+  }
+
+  twitchClient.setBpmCommandCallback(handleBpmCommand);
+
+  createWebMVideo();
+
+  Spicetify.Player.addEventListener("onplaypause", async () => {
+    const startTime = performance.now();
+    const progress = Spicetify.Player.getProgress();
+    lastProgress = progress;
+    syncTiming(startTime, progress);
+    if (Spicetify.Player.isPlaying()) {
+      await sendCurrentTrackIfNeeded(false);
+    }
+  });
+
+  let lastProgress = 0;
+  Spicetify.Player.addEventListener("onprogress", async () => {
+    const currentTime = performance.now();
+    const progress = Spicetify.Player.getProgress();
+
+    if (Math.abs(progress - lastProgress) >= 500) {
+      syncTiming(currentTime, progress);
+    }
+    lastProgress = progress;
+  });
+
+  Spicetify.Player.addEventListener("songchange", async () => {
+    const startTime = performance.now();
+    lastProgress = Spicetify.Player.getProgress();
+
+    const videoElement = document.getElementById(
+      "catjam-webm",
+    ) as HTMLVideoElement;
+    if (videoElement) {
+      audioData = await fetchAudioData();
+      if (audioData && audioData.beats && audioData.beats.length > 0) {
+        const firstBeatStart = audioData.beats[0].start;
+
+        videoElement.playbackRate = await getPlaybackRate(audioData);
+
+        const operationTime = performance.now() - startTime;
+        const delayUntilFirstBeat = Math.max(
+          0,
+          firstBeatStart * 1000 - operationTime,
+        );
+
+        setTimeout(() => {
+          videoElement.currentTime = 0;
+          videoElement.play();
+        }, delayUntilFirstBeat);
+      } else {
+        videoElement.playbackRate = await getPlaybackRate(audioData);
+        videoElement.currentTime = 0;
+        videoElement.play();
+      }
+    } else { void 0; }
+
+    // Send track info to Twitch chat
+    let trackName = "Unknown Track";
+    let artistName = "Unknown Artist";
+    let trackBPM = 120;
+
+    try {
+      const trackNameElement = document.querySelector(".main-trackInfo-name a");
+      const artistNameElement = document.querySelector(
+        ".main-trackInfo-artists a",
+      );
+
+      if (trackNameElement && trackNameElement.textContent) {
+        trackName = trackNameElement.textContent.trim();
+      }
+
+      if (artistNameElement && artistNameElement.textContent) {
+        artistName = artistNameElement.textContent.trim();
+      }
+    } catch (_error) {
+      // logging removed
+    }
+
+    if (trackName === "Unknown Track") {
+      const playerData = Spicetify.Player.data;
+      if (playerData && playerData.item) {
+        trackName = playerData.item.name || "Unknown Track";
+        artistName = playerData.item.artists?.[0]?.name || "Unknown Artist";
+      }
+    }
+
+    if (audioData && audioData.track && audioData.track.tempo) {
+      trackBPM = audioData.track.tempo;
+    }
+
+    const trackChanged =
+      lastTrackInfo.track !== trackName || lastTrackInfo.artist !== artistName;
+    if (!lastMessageSent || trackChanged) {
+      await sendTrackInfoToTwitch(trackName, artistName, trackBPM);
+    } else { void 0; }
+  });
 }
 
 export default main; // Export the main function for use in the application
