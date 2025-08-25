@@ -69,16 +69,16 @@ type TrackInfo = { track: string; artist: string; bpm: number };
 // Загружаем видео из JSON файла с GitHub
 async function loadDefaultVideos() {
   try {
-    const response = await fetch('https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/default-videos.json');
+    const response = await fetch('https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/5393eb68cf205af4cbeaddbc52d6e1d92977259b/src/resources/default-videos.json');
     const data = await response.json();
     return data.videos || [];
   } catch (error) {
     console.error('Ошибка загрузки видео:', error);
     // Возвращаем дефолтные видео если загрузка не удалась
     return [
-      { name: "Cat Jam (По умолчанию)", url: "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/catjam.webm", bpm: 135.48 },
-      { name: "Beb", url: "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/beb.webm", bpm: 170.0 },
-      { name: "Walter Vibe", url: "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/waltervibe.webm", bpm: 122.0 }
+      { name: "Cat Jam (По умолчанию)", url: "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/5393eb68cf205af4cbeaddbc52d6e1d92977259b/src/resources/catjam.webm", bpm: 135.48 },
+      { name: "Beb", url: "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/5393eb68cf205af4cbeaddbc52d6e1d92977259b/src/resources/beb.webm", bpm: 170.0 },
+      { name: "Walter Vibe", url: "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/5393eb68cf205af4cbeaddbc52d6e1d92977259b/src/resources/waltervibe.webm", bpm: 122.0 }
     ];
   }
 }
@@ -203,7 +203,7 @@ async function createWebMVideo() {
     let videoURL = String(settings.getFieldValue("catjam-webm-link"));
     if (!videoURL) {
       videoURL =
-        "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/catjam.webm";
+        "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/5393eb68cf205af4cbeaddbc52d6e1d92977259b/src/resources/catjam.webm";
     } else {
       // Если выбрано видео из списка, получаем URL
       const selectedIndex = parseInt(videoURL);
@@ -215,14 +215,14 @@ async function createWebMVideo() {
         if (customURL && customURL.startsWith("http")) {
           videoURL = customURL;
         } else {
-          videoURL = "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/catjam.webm";
+          videoURL = "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/5393eb68cf205af4cbeaddbc52d6e1d92977259b/src/resources/catjam.webm";
         }
       } else if (videoURL.startsWith("http")) {
         // Если это уже URL, используем как есть
         videoURL = videoURL;
       } else {
         // Если это не число и не URL, используем дефолтное видео
-        videoURL = "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/refs/heads/main/src/resources/catjam.webm";
+        videoURL = "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/5393eb68cf205af4cbeaddbc52d6e1d92977259b/src/resources/catjam.webm";
       }
     }
 
