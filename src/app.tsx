@@ -261,6 +261,80 @@ async function handleBpmCommand(): Promise<void> {
   } else { void 0; }
 }
 
+function applyButtonStyles(buttonId: string) {
+  const btn = document.getElementById(
+    "catjam-settings." + buttonId,
+  ) as HTMLButtonElement | null;
+  if (btn) {
+    btn.setAttribute("style", STYLE_RECONNECT_BUTTON);
+    try {
+      btn.addEventListener("mouseenter", () => {
+        btn.style.backgroundColor = "#282828";
+        btn.style.borderColor = "#a7a7a7";
+      });
+      btn.addEventListener("mouseleave", () => {
+        btn.style.backgroundColor = "transparent";
+        btn.style.borderColor = "#878787";
+      });
+      btn.addEventListener("focus", () => {
+        btn.style.outline = "none";
+        btn.style.boxShadow = "0 0 0 2px #fff";
+      });
+      btn.addEventListener("blur", () => {
+        btn.style.boxShadow = "";
+      });
+    } catch (_error) { void 0; }
+  }
+}
+
+function enhanceHeaderRowUI(
+  buttonId: string,
+  headerStyle: string,
+  titleText: string,
+): void {
+  try {
+    const btn = document.querySelector(
+      `#catjam-settings button[id*="${buttonId}"]`,
+    ) as HTMLButtonElement | null;
+    if (!btn) return;
+    
+    // Просто стилизуем кнопку как разделитель
+    btn.textContent = titleText;
+    btn.setAttribute("style", headerStyle);
+    
+    // Растягиваем на всю ширину
+    const row = btn.closest(".x-settings-row") as HTMLDivElement | null;
+    if (row) {
+      const firstCol = row.querySelector(".x-settings-firstColumn") as HTMLDivElement | null;
+      const secondCol = row.querySelector(".x-settings-secondColumn") as HTMLDivElement | null;
+      
+      if (firstCol) firstCol.style.display = "none";
+      if (secondCol) {
+        secondCol.style.gridColumn = "1 / -1";
+        secondCol.style.width = "100%";
+      }
+    }
+  } catch (_error) { void 0; }
+}
+
+function applyUiEnhancements(): void {
+  try {
+    const container = document.getElementById("catjam-settings");
+    if (!container) return;
+
+    enhanceHeaderRowUI(ID_CAT_SECTION, STYLE_HEADER_CAT, TITLE_CAT_SECTION);
+    enhanceHeaderRowUI(
+      ID_TWITCH_SECTION,
+      STYLE_HEADER_TWITCH,
+      TITLE_TWITCH_SECTION,
+    );
+    
+    // Применяем стили кнопок
+    applyButtonStyles(ID_TWITCH_RECONNECT);
+    applyButtonStyles(ID_CAT_RELOAD);
+  } catch (_error) { void 0; }
+}
+
 async function main() {
   while (!Spicetify?.Player?.addEventListener || !Spicetify?.getAudioData) {
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -339,6 +413,9 @@ async function main() {
       ? STATUS_CONNECTED_TEXT
       : STATUS_DISCONNECTED_TEXT;
     btn.setAttribute("style", darkButtonStyle);
+    // Поддерживаем неактивное состояние
+    btn.disabled = true;
+    btn.style.pointerEvents = "none";
     return true;
   };
   const setStatus = (connected: boolean) => {
@@ -390,48 +467,33 @@ async function main() {
   );
 
   settings.pushSettings();
-  setTimeout(() => {
+  const applyInitialStyles = () => {
     const statusBtn = document.getElementById(
       "catjam-settings." + ID_TWITCH_STATUS_INDICATOR,
     ) as HTMLButtonElement | null;
-    if (statusBtn) statusBtn.setAttribute("style", darkButtonStyle);
-    const catDivider = document.getElementById(
-      "catjam-settings." + ID_CAT_SECTION,
-    ) as HTMLButtonElement | null;
-    if (catDivider) catDivider.setAttribute("style", STYLE_HEADER_CAT);
-    const twitchDivider = document.getElementById(
-      "catjam-settings." + ID_TWITCH_SECTION,
-    ) as HTMLButtonElement | null;
-    if (twitchDivider) twitchDivider.setAttribute("style", STYLE_HEADER_TWITCH);
-    const reconnectBtn = document.getElementById(
-      "catjam-settings." + ID_TWITCH_RECONNECT,
-    ) as HTMLButtonElement | null;
-    if (reconnectBtn) {
-      reconnectBtn.setAttribute("style", STYLE_RECONNECT_BUTTON);
-      try {
-        reconnectBtn.addEventListener("mouseenter", () => {
-          reconnectBtn.style.backgroundColor = "#0a0a0a";
-        });
-        reconnectBtn.addEventListener("mouseleave", () => {
-          reconnectBtn.style.backgroundColor = "#000";
-        });
-        reconnectBtn.addEventListener("focus", () => {
-          reconnectBtn.style.outline = "none";
-          reconnectBtn.style.boxShadow = "0 0 0 3px rgba(255,255,255,0.15)";
-        });
-        reconnectBtn.addEventListener("blur", () => {
-          reconnectBtn.style.boxShadow = "";
-        });
-      } catch (_error) { void 0; }
+    if (statusBtn) {
+      statusBtn.setAttribute("style", darkButtonStyle);
+      // Убираем кнопочный вид, делаем как простой текст
+      statusBtn.disabled = true;
+      statusBtn.style.pointerEvents = "none";
     }
-    applyStatusToUi();
-  }, 0);
+    applyUiEnhancements();
+  };
+
+  setTimeout(applyInitialStyles, 0);
+  setTimeout(applyInitialStyles, 100);
+  setTimeout(applyInitialStyles, 500);
+  setTimeout(applyInitialStyles, 1000);
+
+
+  applyStatusToUi();
 
   try {
     const container = document.getElementById(settings.settingsId);
     if (container) {
       const observer = new MutationObserver(() => {
         applyStatusToUi();
+        setTimeout(applyUiEnhancements, 50);
       });
       observer.observe(container, { childList: true, subtree: true });
       setTimeout(() => observer.disconnect(), 5000);
@@ -439,8 +501,11 @@ async function main() {
   } catch (_error) { void 0; }
 
   try {
-    const refreshInterval = setInterval(applyStatusToUi, 500);
-    setTimeout(() => clearInterval(refreshInterval), 5000);
+    const refreshInterval = setInterval(() => {
+      applyStatusToUi();
+      applyUiEnhancements();
+    }, 200);
+    setTimeout(() => clearInterval(refreshInterval), 10000);
   } catch (_error) { void 0; }
 
   twitchClient = new TwitchClient();
