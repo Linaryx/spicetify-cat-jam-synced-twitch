@@ -66,9 +66,90 @@ let audioData;
 let twitchClient: TwitchClient;
 type TrackInfo = { track: string; artist: string; bpm: number };
 
+// Функция для создания стилизованной кнопки
+function createStyledButton(id: string, title: string, text: string, onClick: () => void, style: string) {
+  // Создаём обычную кнопку через Spicetify
+  settings.addButton(id, title, text, onClick);
+  
+  // Функция для применения стилей
+  const applyStyles = () => {
+    const btn = document.getElementById("catjam-settings." + id) as HTMLButtonElement | null;
+    if (btn) {
+      btn.setAttribute("style", style);
+      
+      // Добавляем hover эффекты
+      btn.addEventListener("mouseenter", () => {
+        btn.style.setProperty('background-color', '#282828', 'important');
+        btn.style.setProperty('border-color', '#a7a7a7', 'important');
+      });
+      
+      btn.addEventListener("mouseleave", () => {
+        btn.style.setProperty('background-color', 'transparent', 'important');
+        btn.style.setProperty('border-color', '#878787', 'important');
+      });
+      
+      btn.addEventListener("focus", () => {
+        btn.style.setProperty('outline', 'none', 'important');
+        btn.style.setProperty('box-shadow', '0 0 0 2px #fff', 'important');
+      });
+      
+      btn.addEventListener("blur", () => {
+        btn.style.setProperty('box-shadow', '', 'important');
+      });
+      
+      return true;
+    }
+    return false;
+  };
+  
+  // Пробуем применить стили сразу
+  if (!applyStyles()) {
+    // Если не получилось, пробуем через небольшую задержку
+    setTimeout(() => {
+      if (!applyStyles()) {
+        // Если все еще не получилось, пробуем через большую задержку
+        setTimeout(applyStyles, 500);
+      }
+    }, 50);
+  }
+}
+
+// Функция для очистки всех настроек
+function clearAllSettings() {
+  console.log('🧹 Очищаем все настройки Cat Jam...');
+  
+  const settingsToClear = [
+    'catjam-webm-link',
+    'catjam-webm-bpm', 
+    'catjam-webm-position',
+    'catjam-webm-bpm-method',
+    'catjam-webm-position-left-size',
+    'catjam-webm-custom-url',
+    'catjam-installed'
+  ];
+  
+  settingsToClear.forEach(key => {
+    try {
+      Spicetify.LocalStorage.remove(key);
+      console.log(`✅ Удалён ключ: ${key}`);
+    } catch (error) {
+      console.log(`❌ Ошибка при удалении ${key}:`, error);
+    }
+  });
+  
+  // Очищаем конфигурацию Twitch
+  try {
+    localStorage.removeItem('twitch-config');
+    console.log('✅ Удалена конфигурация Twitch');
+  } catch (error) {
+    console.log('❌ Ошибка при удалении twitch-config:', error);
+  }
+  
+  console.log('🎉 Очистка завершена! Перезагрузите страницу.');
+}
+
 // Дефолтные видео (CORS блокирует загрузку с GitHub)
 function getDefaultVideos() {
-  console.log('Используем встроенные дефолтные видео...');
   return [
     { name: "Cat Jam (По умолчанию)", url: "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/main/src/resources/catjam.webm", bpm: 135.48 },
     { name: "Beb", url: "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/main/src/resources/beb.webm", bpm: 170.0 },
@@ -117,6 +198,7 @@ async function getCurrentTrackInfo(): Promise<TrackInfo> {
     const data = await fetchAudioData();
     if (data?.track?.tempo) {
       trackBPM = data.track.tempo;
+      console.log('🎵 BPM трека из getCurrentTrackInfo:', trackBPM);
     }
   } catch (_error) { void 0; }
 
@@ -194,25 +276,19 @@ async function createWebMVideo() {
     if (existingVideo) existingVideo.remove();
 
     let videoURL = String(settings.getFieldValue("catjam-webm-link"));
-    console.log('Сохранённое значение videoURL:', videoURL);
-    console.log('Доступные видео:', defaultVideos);
-    
     if (!videoURL) {
       videoURL =
         "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/main/src/resources/catjam.webm";
-      console.log('Используем дефолтный URL:', videoURL);
     } else {
       // Если выбрано видео из списка, получаем URL
       const selectedIndex = parseInt(videoURL);
-      console.log('Парсим selectedIndex:', selectedIndex);
       
       if (!isNaN(selectedIndex) && selectedIndex >= 0 && selectedIndex < defaultVideos.length) {
         videoURL = defaultVideos[selectedIndex].url;
-        console.log('Используем видео из списка по индексу:', videoURL);
-      } else if (selectedIndex === defaultVideos.length) {
+        console.log('🎵 BPM видео:', defaultVideos[selectedIndex].bpm);
+      } else if (selectedIndex === defaultVideos.length || videoURL === "Пользовательское") {
         // Если выбрано "Пользовательское", используем пользовательский URL
         const customURL = String(settings.getFieldValue("catjam-webm-custom-url") || "");
-        console.log('Пользовательский URL:', customURL);
         if (customURL && customURL.startsWith("http")) {
           videoURL = customURL;
         } else {
@@ -220,18 +296,15 @@ async function createWebMVideo() {
         }
       } else if (videoURL.startsWith("http")) {
         // Если это уже URL, используем как есть
-        videoURL = videoURL;
-        console.log('Используем как есть URL:', videoURL);
       } else {
         // Если это название видео, ищем по названию
         const foundVideo = defaultVideos.find(video => video.name === videoURL);
         if (foundVideo) {
           videoURL = foundVideo.url;
-          console.log('Найдено видео по названию:', videoURL);
+          console.log('🎵 BPM видео:', foundVideo.bpm);
         } else {
           // Если это не число и не URL, используем дефолтное видео
           videoURL = "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/main/src/resources/catjam.webm";
-          console.log('Используем дефолтный URL (fallback):', videoURL);
         }
       }
     }
@@ -271,6 +344,7 @@ async function sendTrackInfoToTwitch(
   bpm: number,
 ): Promise<void> {
   if (twitchClient && twitchClient.isConnectedToTwitch()) {
+    console.log('📡 Отправляем в Twitch:', { track, artist, bpm });
     const ok = await twitchClient.sendTrackInfo(track, artist, bpm);
     if (ok) {
       lastMessageSent = true;
@@ -313,31 +387,7 @@ async function handleBpmCommand(): Promise<void> {
   } else { void 0; }
 }
 
-function applyButtonStyles(buttonId: string) {
-  const btn = document.getElementById(
-    "catjam-settings." + buttonId,
-  ) as HTMLButtonElement | null;
-  if (btn) {
-    btn.setAttribute("style", STYLE_RECONNECT_BUTTON);
-    try {
-      btn.addEventListener("mouseenter", () => {
-        btn.style.backgroundColor = "#282828";
-        btn.style.borderColor = "#a7a7a7";
-      });
-      btn.addEventListener("mouseleave", () => {
-        btn.style.backgroundColor = "transparent";
-        btn.style.borderColor = "#878787";
-      });
-      btn.addEventListener("focus", () => {
-        btn.style.outline = "none";
-        btn.style.boxShadow = "0 0 0 2px #fff";
-      });
-      btn.addEventListener("blur", () => {
-        btn.style.boxShadow = "";
-      });
-    } catch (_error) { void 0; }
-  }
-}
+
 
 function enhanceHeaderRowUI(
   buttonId: string,
@@ -354,26 +404,40 @@ function enhanceHeaderRowUI(
     btn.textContent = titleText;
     btn.setAttribute("style", headerStyle);
     
-    // Растягиваем на всю ширину
-    const row = btn.closest(".x-settings-row") as HTMLDivElement | null;
+    // Растягиваем на всю ширину - пробуем разные селекторы
+    const row = btn.closest(".x-settings-row") || btn.closest("[class*='settings-row']") || btn.closest("[class*='row']") as HTMLDivElement | null;
     if (row) {
-      const firstCol = row.querySelector(".x-settings-firstColumn") as HTMLDivElement | null;
-      const secondCol = row.querySelector(".x-settings-secondColumn") as HTMLDivElement | null;
+      // Убираем лишние логи
       
-      if (firstCol) firstCol.style.display = "none";
+      // Пробуем разные селекторы для колонок
+      const firstCol = (row.querySelector(".x-settings-firstColumn") || 
+                      row.querySelector("[class*='firstColumn']") || 
+                      row.querySelector("[class*='first-column']")) as HTMLDivElement | null;
+      const secondCol = (row.querySelector(".x-settings-secondColumn") || 
+                       row.querySelector("[class*='secondColumn']") || 
+                       row.querySelector("[class*='second-column']")) as HTMLDivElement | null;
+      
+      if (firstCol) {
+        firstCol.style.display = "none";
+      }
       if (secondCol) {
         secondCol.style.gridColumn = "1 / -1";
         secondCol.style.width = "100%";
       }
     }
-  } catch (_error) { void 0; }
+  } catch (_error) { 
+    console.log('Ошибка в enhanceHeaderRowUI:', _error);
+  }
 }
 
 function applyUiEnhancements(): void {
   try {
     const container = document.getElementById("catjam-settings");
-    if (!container) return;
+    if (!container) {
+      return; // Убираем лишний лог
+    }
 
+    // Убираем лишние логи, оставляем только ошибки
     enhanceHeaderRowUI(ID_CAT_SECTION, STYLE_HEADER_CAT, TITLE_CAT_SECTION);
     enhanceHeaderRowUI(
       ID_TWITCH_SECTION,
@@ -381,10 +445,35 @@ function applyUiEnhancements(): void {
       TITLE_TWITCH_SECTION,
     );
     
-    // Применяем стили кнопок
-    applyButtonStyles(ID_TWITCH_RECONNECT);
-    applyButtonStyles(ID_CAT_RELOAD);
-  } catch (_error) { void 0; }
+    // Принудительно применяем стили к кнопкам
+    const reloadBtn = document.getElementById("catjam-settings." + ID_CAT_RELOAD) as HTMLButtonElement | null;
+    const reconnectBtn = document.getElementById("catjam-settings." + ID_TWITCH_RECONNECT) as HTMLButtonElement | null;
+    
+    if (reloadBtn && !reloadBtn.style.border) {
+      reloadBtn.setAttribute("style", STYLE_RECONNECT_BUTTON);
+    }
+    
+    if (reconnectBtn && !reconnectBtn.style.border) {
+      reconnectBtn.setAttribute("style", STYLE_RECONNECT_BUTTON);
+    }
+    
+    // Создаём поле пароля для токена (если ещё не создано)
+    const tokenInput = document.getElementById("catjam-settings." + ID_TWITCH_TOKEN) as HTMLInputElement | null;
+    if (tokenInput && tokenInput.type !== "password") {
+      createPasswordField(ID_TWITCH_TOKEN);
+    }
+    
+    // Применяем стили к заголовкам (растягиваем на всю ширину)
+    enhanceHeaderRowUI(ID_CAT_SECTION, STYLE_HEADER_CAT, TITLE_CAT_SECTION);
+    enhanceHeaderRowUI(
+      ID_TWITCH_SECTION,
+      STYLE_HEADER_TWITCH,
+      TITLE_TWITCH_SECTION,
+    );
+    
+  } catch (_error) { 
+    console.log('Ошибка в applyUiEnhancements:', _error);
+  }
 }
 
 async function main() {
@@ -392,20 +481,99 @@ async function main() {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   
+  // Добавляем CSS стили в head документа
+  try {
+    const styleElement = document.createElement('style');
+    styleElement.textContent = `
+      #catjam-settings button[id*="twitch-reconnect"],
+      #catjam-settings button[id*="cat-reload"] {
+        background-color: transparent !important;
+        border: 1px solid #878787 !important;
+        color: #fff !important;
+        font-size: 14px !important;
+        font-weight: 600 !important;
+        padding: 8px 16px !important;
+        border-radius: 4px !important;
+        cursor: pointer !important;
+        transition: all 0.1s ease !important;
+        pointer-events: auto !important;
+        user-select: none !important;
+      }
+      
+      #catjam-settings button[id*="twitch-reconnect"]:hover,
+      #catjam-settings button[id*="cat-reload"]:hover {
+        background-color: #282828 !important;
+        border-color: #a7a7a7 !important;
+      }
+      
+      #catjam-settings button[id*="twitch-reconnect"]:focus,
+      #catjam-settings button[id*="cat-reload"]:focus {
+        outline: none !important;
+        box-shadow: 0 0 0 2px #fff !important;
+      }
+      
+      #catjam-settings button[id*="twitch-reconnect"]:active,
+      #catjam-settings button[id*="cat-reload"]:active {
+        background-color: #404040 !important;
+        border-color: #a7a7a7 !important;
+      }
+    `;
+    document.head.appendChild(styleElement);
+    console.log('🎨 CSS стили добавлены в head');
+  } catch (error) {
+    console.log('❌ Ошибка при добавлении CSS стилей:', error);
+  }
+  
+  // Проверяем, первая ли это установка
+  const isFirstInstall = !Spicetify.LocalStorage.get('catjam-installed');
+  if (isFirstInstall) {
+    console.log('🎉 Первая установка Cat Jam - очищаем старые настройки...');
+    
+    // Очищаем все старые настройки
+    const oldSettings = [
+      'catjam-webm-link',
+      'catjam-webm-bpm', 
+      'catjam-webm-position',
+      'catjam-webm-bpm-method',
+      'catjam-webm-position-left-size',
+      'catjam-webm-custom-url'
+    ];
+    
+    oldSettings.forEach(key => {
+      try {
+        Spicetify.LocalStorage.remove(key);
+        console.log(`🧹 Удалён старый ключ: ${key}`);
+      } catch (error) {
+        console.log(`❌ Ошибка при удалении ${key}:`, error);
+      }
+    });
+    
+    // Очищаем конфигурацию Twitch
+    try {
+      localStorage.removeItem('twitch-config');
+      console.log('🧹 Удалена старая конфигурация Twitch');
+    } catch (error) {
+      console.log('❌ Ошибка при удалении twitch-config:', error);
+    }
+    
+    // Отмечаем, что приложение установлено
+    Spicetify.LocalStorage.set('catjam-installed', 'true');
+    console.log('✅ Установка завершена');
+  }
+  
   // Загружаем дефолтные видео
   defaultVideos = getDefaultVideos();
   videoOptions = [...defaultVideos.map(video => video.name), "Пользовательское"];
-  console.log('Загружены видео:', defaultVideos);
-  console.log('Опции для выпадающего списка:', videoOptions);
   
   let audioData;
 
   // Create Settings UI - Cat (on top)
-  settings.addButton(
+  createStyledButton(
     ID_CAT_SECTION,
     TITLE_CAT_SECTION,
     TEXT_CAT_SECTION,
     () => {},
+    STYLE_HEADER_CAT
   );
   settings.addDropDown(
     ID_CAT_WEBM_LINK,
@@ -434,14 +602,15 @@ async function main() {
     0,
   );
   settings.addInput(ID_CAT_LEFT_SIZE, LABEL_CAT_LEFT_SIZE, "");
-  settings.addButton(ID_CAT_RELOAD, TITLE_CAT_RELOAD, TEXT_CAT_RELOAD, () => {
+  createStyledButton(ID_CAT_RELOAD, TITLE_CAT_RELOAD, TEXT_CAT_RELOAD, () => {
     createWebMVideo();
-  });
-  settings.addButton(
+  }, STYLE_RECONNECT_BUTTON);
+  createStyledButton(
     ID_TWITCH_SECTION,
     TITLE_TWITCH_SECTION,
     TEXT_TWITCH_SECTION,
     () => {},
+    STYLE_HEADER_TWITCH
   );
   settings.addInput(ID_TWITCH_TOKEN, LABEL_TWITCH_TOKEN, "");
   settings.addInput(ID_TWITCH_CHANNEL, LABEL_TWITCH_CHANNEL, "");
@@ -461,11 +630,12 @@ async function main() {
     LABEL_TWITCH_BPM_VALUES,
     "80,100,110,120,130,140,150,160,170,180",
   );
-  settings.addButton(
+  createStyledButton(
     ID_TWITCH_STATUS_INDICATOR,
     TITLE_TWITCH_STATUS_INDICATOR,
     "\uD83D\uDD34 Disconnected",
     () => {},
+    STYLE_DARK_BUTTON
   );
   let lastConnected = false;
   const darkButtonStyle = STYLE_DARK_BUTTON;
@@ -492,13 +662,17 @@ async function main() {
     }
   };
 
-  settings.addButton(
+  createStyledButton(
     ID_TWITCH_RECONNECT,
     TITLE_TWITCH_RECONNECT,
     TEXT_TWITCH_RECONNECT,
     () => {
       if (!twitchClient) return;
-      const token = String(settings.getFieldValue(ID_TWITCH_TOKEN) || "");
+      
+      // Получаем токен из поля ввода напрямую
+      const tokenInput = document.getElementById("catjam-settings." + ID_TWITCH_TOKEN) as HTMLInputElement | null;
+      const token = tokenInput ? tokenInput.value : String(settings.getFieldValue(ID_TWITCH_TOKEN) || "");
+      
       const channel = String(settings.getFieldValue(ID_TWITCH_CHANNEL) || "");
       const enabled = Boolean(settings.getFieldValue(ID_TWITCH_ENABLED));
       const delay =
@@ -526,56 +700,71 @@ async function main() {
       } catch (_error) { void 0; }
       twitchClient
         .connect()
-        .then((ok) => setStatus(ok))
-        .catch(() => setStatus(false));
+        .then((ok) => {
+          setStatus(ok);
+        })
+        .catch((error) => {
+          setStatus(false);
+        });
     },
+    STYLE_RECONNECT_BUTTON
   );
 
   settings.pushSettings();
   
+  // Ждём рендера DOM и применяем стили
+  await waitForElement("#catjam-settings");
+  
+  // Создаём поле пароля для токена Twitch
+  createPasswordField(ID_TWITCH_TOKEN);
+  
+  // Применяем стили UI
+  applyUiEnhancements();
+  
   // Добавляем обработчик для автоматического заполнения BPM при выборе видео
-  setTimeout(() => {
-    const videoSelect = document.getElementById(
-      "catjam-settings." + ID_CAT_WEBM_LINK,
-    ) as HTMLSelectElement | null;
-    const bpmInput = document.getElementById(
-      "catjam-settings." + ID_CAT_WEBM_BPM,
-    ) as HTMLInputElement | null;
-    
-    if (videoSelect && bpmInput) {
-      videoSelect.addEventListener("change", () => {
+  const videoSelect = document.getElementById(
+    "catjam-settings." + ID_CAT_WEBM_LINK,
+  ) as HTMLSelectElement | null;
+  const bpmInput = document.getElementById(
+    "catjam-settings." + ID_CAT_WEBM_BPM,
+  ) as HTMLInputElement | null;
+  
+  if (videoSelect && bpmInput) {
+          videoSelect.addEventListener("change", () => {
         const selectedIndex = videoSelect.selectedIndex;
-        console.log('Выбран индекс:', selectedIndex, 'из', defaultVideos.length);
         
         if (selectedIndex >= 0 && selectedIndex < defaultVideos.length) {
           const selectedVideo = defaultVideos[selectedIndex];
-          console.log('Выбрано видео:', selectedVideo);
           bpmInput.value = selectedVideo.bpm.toString();
           // Сохраняем индекс выбранного видео
           settings.setFieldValue(ID_CAT_WEBM_LINK, selectedIndex.toString());
         } else if (selectedIndex === defaultVideos.length) {
-          console.log('Выбрано "Пользовательское"');
           // Если выбрано "Пользовательское", очищаем BPM
           bpmInput.value = "";
           settings.setFieldValue(ID_CAT_WEBM_LINK, selectedIndex.toString());
         }
       });
-      
-      // Устанавливаем начальное значение, если оно сохранено
-      const savedIndex = String(settings.getFieldValue(ID_CAT_WEBM_LINK) || "");
-      if (savedIndex && !isNaN(parseInt(savedIndex))) {
-        const index = parseInt(savedIndex);
-        if (index >= 0 && index < defaultVideos.length) {
-          videoSelect.selectedIndex = index;
-          const selectedVideo = defaultVideos[index];
-          bpmInput.value = selectedVideo.bpm.toString();
-        } else if (index === defaultVideos.length) {
-          videoSelect.selectedIndex = index;
-          bpmInput.value = "";
-        }
+    
+    // Устанавливаем начальное значение, если оно сохранено
+    const savedValue = String(settings.getFieldValue(ID_CAT_WEBM_LINK) || "");
+    
+    if (savedValue === "Пользовательское") {
+      // Если сохранено название "Пользовательское"
+      videoSelect.selectedIndex = defaultVideos.length;
+      bpmInput.value = "";
+    } else if (savedValue && !isNaN(parseInt(savedValue))) {
+      // Если сохранён числовой индекс
+      const index = parseInt(savedValue);
+      if (index >= 0 && index < defaultVideos.length) {
+        videoSelect.selectedIndex = index;
+        const selectedVideo = defaultVideos[index];
+        bpmInput.value = selectedVideo.bpm.toString();
+      } else if (index === defaultVideos.length) {
+        videoSelect.selectedIndex = index;
+        bpmInput.value = "";
       }
     }
-  }, 1000);
+  }
 
   const applyInitialStyles = () => {
     const statusBtn = document.getElementById(
@@ -590,10 +779,8 @@ async function main() {
     applyUiEnhancements();
   };
 
-  setTimeout(applyInitialStyles, 0);
-  setTimeout(applyInitialStyles, 100);
-  setTimeout(applyInitialStyles, 500);
-  setTimeout(applyInitialStyles, 1000);
+  // Применяем начальные стили сразу после рендера
+  applyInitialStyles();
 
 
   applyStatusToUi();
@@ -603,10 +790,11 @@ async function main() {
     if (container) {
       const observer = new MutationObserver(() => {
         applyStatusToUi();
-        setTimeout(applyUiEnhancements, 50);
+        applyUiEnhancements();
       });
       observer.observe(container, { childList: true, subtree: true });
-      setTimeout(() => observer.disconnect(), 5000);
+      // Отключаем observer через 10 секунд
+      setTimeout(() => observer.disconnect(), 10000);
     }
   } catch (_error) { void 0; }
 
@@ -614,8 +802,8 @@ async function main() {
     const refreshInterval = setInterval(() => {
       applyStatusToUi();
       applyUiEnhancements();
-    }, 200);
-    setTimeout(() => clearInterval(refreshInterval), 10000);
+    }, 1000); // Уменьшаем частоту проверки до 1 секунды
+    setTimeout(() => clearInterval(refreshInterval), 10000); // Уменьшаем время работы
   } catch (_error) { void 0; }
 
   twitchClient = new TwitchClient();
@@ -746,5 +934,104 @@ async function main() {
     } else { void 0; }
   });
 }
+
+// Функция для создания поля пароля с кнопкой показать/скрыть
+function createPasswordField(fieldId: string) {
+  try {
+    const inputElement = document.getElementById(
+      "catjam-settings." + fieldId,
+    ) as HTMLInputElement | null;
+    
+    if (!inputElement) {
+      return;
+    }
+    
+    // Проверяем, не создано ли уже поле пароля
+    if (inputElement.type === "password" && inputElement.parentElement?.querySelector('button[title*="пароль"]')) {
+      return; // Поле пароля уже создано
+    }
+    
+    // Устанавливаем тип password
+    inputElement.type = "password";
+    
+    // Создаём контейнер для поля и кнопки
+    const container = document.createElement("div");
+    container.style.position = "relative";
+    container.style.display = "flex";
+    container.style.alignItems = "center";
+    container.style.width = "100%";
+    
+    // Перемещаем input в контейнер
+    inputElement.parentNode?.insertBefore(container, inputElement);
+    container.appendChild(inputElement);
+    
+    // Создаём кнопку показать/скрыть
+    const toggleButton = document.createElement("button");
+    toggleButton.type = "button";
+    toggleButton.innerHTML = "👁️";
+    toggleButton.title = "Показать/скрыть пароль";
+    toggleButton.style.cssText = `
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: transparent;
+      border: none;
+      color: #b3b3b3;
+      cursor: pointer;
+      font-size: 16px;
+      padding: 4px;
+      border-radius: 4px;
+      transition: all 0.2s ease;
+      z-index: 10;
+    `;
+    
+    // Добавляем hover эффект
+    toggleButton.addEventListener("mouseenter", () => {
+      toggleButton.style.color = "#fff";
+      toggleButton.style.backgroundColor = "#282828";
+    });
+    
+    toggleButton.addEventListener("mouseleave", () => {
+      toggleButton.style.color = "#b3b3b3";
+      toggleButton.style.backgroundColor = "transparent";
+    });
+    
+    // Обработчик клика для показа/скрытия
+    toggleButton.addEventListener("click", () => {
+      if (inputElement.type === "password") {
+        inputElement.type = "text";
+        toggleButton.innerHTML = "🙈";
+        toggleButton.title = "Скрыть пароль";
+      } else {
+        inputElement.type = "password";
+        toggleButton.innerHTML = "👁️";
+        toggleButton.title = "Показать пароль";
+      }
+    });
+    
+    // Добавляем кнопку в контейнер
+    container.appendChild(toggleButton);
+    
+    // Устанавливаем отступ справа для input, чтобы текст не перекрывался кнопкой
+    inputElement.style.paddingRight = "40px";
+    
+    // Добавляем обработчик для сохранения значения в настройках
+    inputElement.addEventListener("input", () => {
+      settings.setFieldValue(fieldId, inputElement.value);
+    });
+    
+    // Добавляем обработчик для изменения типа (показать/скрыть)
+    inputElement.addEventListener("change", () => {
+      settings.setFieldValue(fieldId, inputElement.value);
+    });
+    
+  } catch (error) {
+    // Ошибки игнорируем
+  }
+}
+
+// Делаем функцию очистки доступной глобально
+(window as any).clearCatJamSettings = clearAllSettings;
 
 export default main; // Export the main function for use in the application

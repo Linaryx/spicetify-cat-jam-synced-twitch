@@ -83,6 +83,13 @@ export function calculateBetterBPM(
     betterBPM = Math.max(betterBPM, CALC_MIN_BETTER_BPM);
   }
 
+  console.log('🎵 Нормализация BPM:', { 
+    original: currentBPM, 
+    danceability, 
+    energy, 
+    normalized: betterBPM 
+  });
+
   return betterBPM;
 }
 
@@ -99,6 +106,11 @@ export async function computePlaybackRate(
     );
     const bpm =
       method === "Track BPM" ? trackBPM : await getBetterBPM(trackBPM);
+    
+    // Логируем BPM трека и нормализованный BPM
+    console.log('🎵 BPM трека:', trackBPM);
+    console.log('🎵 Нормализованный BPM:', bpm);
+    
     return (bpm || trackBPM) / videoDefaultBPM;
   }
   return 1;
