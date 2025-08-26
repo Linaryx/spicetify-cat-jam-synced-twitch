@@ -7,7 +7,7 @@ export const SELECTOR_ARTIST_NAME = ".main-trackInfo-artists a";
 export const SELECTOR_LEFT_LIBRARY = ".main-yourLibraryX-libraryItemContainer";
 
 export const CATJAM_VIDEO_URL =
-  "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/5393eb68cf205af4cbeaddbc52d6e1d92977259b/src/resources/catjam.webm";
+  "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/main/src/resources/catjam.webm";
 
 export const SETTINGS_SECTION_TITLE = "Настройки Cat-Jam";
 export const SETTINGS_SECTION_ID = "catjam-settings";
@@ -82,8 +82,8 @@ export const LABEL_CAT_LEFT_SIZE =
   "Размер webM видео в левой медиатеке (работает только для медиатеки слева, по умолчанию: 100)";
 
 export const ID_CAT_RELOAD = "catjam-reload";
-export const TITLE_CAT_RELOAD = "Сохранить";
-export const TEXT_CAT_RELOAD = "Сохранить";
+export const TITLE_CAT_RELOAD = "Обновить настройки видео";
+export const TEXT_CAT_RELOAD = "🔄 Обновить";
 
 export const ID_TWITCH_SECTION = "twitch-section";
 export const TITLE_TWITCH_SECTION = "Twitch";

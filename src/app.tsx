@@ -66,21 +66,14 @@ let audioData;
 let twitchClient: TwitchClient;
 type TrackInfo = { track: string; artist: string; bpm: number };
 
-// Загружаем видео из JSON файла с GitHub
-async function loadDefaultVideos() {
-  try {
-    const response = await fetch('https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/5393eb68cf205af4cbeaddbc52d6e1d92977259b/src/resources/default-videos.json');
-    const data = await response.json();
-    return data.videos || [];
-  } catch (error) {
-    console.error('Ошибка загрузки видео:', error);
-    // Возвращаем дефолтные видео если загрузка не удалась
-    return [
-      { name: "Cat Jam (По умолчанию)", url: "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/5393eb68cf205af4cbeaddbc52d6e1d92977259b/src/resources/catjam.webm", bpm: 135.48 },
-      { name: "Beb", url: "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/5393eb68cf205af4cbeaddbc52d6e1d92977259b/src/resources/beb.webm", bpm: 170.0 },
-      { name: "Walter Vibe", url: "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/5393eb68cf205af4cbeaddbc52d6e1d92977259b/src/resources/waltervibe.webm", bpm: 122.0 }
-    ];
-  }
+// Дефолтные видео (CORS блокирует загрузку с GitHub)
+function getDefaultVideos() {
+  console.log('Используем встроенные дефолтные видео...');
+  return [
+    { name: "Cat Jam (По умолчанию)", url: "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/main/src/resources/catjam.webm", bpm: 135.48 },
+    { name: "Beb", url: "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/main/src/resources/beb.webm", bpm: 170.0 },
+    { name: "Walter Vibe", url: "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/main/src/resources/waltervibe.webm", bpm: 122.0 }
+  ];
 }
 
 let defaultVideos: Array<{name: string, url: string, bpm: number}> = [];
@@ -201,28 +194,45 @@ async function createWebMVideo() {
     if (existingVideo) existingVideo.remove();
 
     let videoURL = String(settings.getFieldValue("catjam-webm-link"));
+    console.log('Сохранённое значение videoURL:', videoURL);
+    console.log('Доступные видео:', defaultVideos);
+    
     if (!videoURL) {
       videoURL =
-        "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/5393eb68cf205af4cbeaddbc52d6e1d92977259b/src/resources/catjam.webm";
+        "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/main/src/resources/catjam.webm";
+      console.log('Используем дефолтный URL:', videoURL);
     } else {
       // Если выбрано видео из списка, получаем URL
       const selectedIndex = parseInt(videoURL);
+      console.log('Парсим selectedIndex:', selectedIndex);
+      
       if (!isNaN(selectedIndex) && selectedIndex >= 0 && selectedIndex < defaultVideos.length) {
         videoURL = defaultVideos[selectedIndex].url;
+        console.log('Используем видео из списка по индексу:', videoURL);
       } else if (selectedIndex === defaultVideos.length) {
         // Если выбрано "Пользовательское", используем пользовательский URL
         const customURL = String(settings.getFieldValue("catjam-webm-custom-url") || "");
+        console.log('Пользовательский URL:', customURL);
         if (customURL && customURL.startsWith("http")) {
           videoURL = customURL;
         } else {
-          videoURL = "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/5393eb68cf205af4cbeaddbc52d6e1d92977259b/src/resources/catjam.webm";
+          videoURL = "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/main/src/resources/catjam.webm";
         }
       } else if (videoURL.startsWith("http")) {
         // Если это уже URL, используем как есть
         videoURL = videoURL;
+        console.log('Используем как есть URL:', videoURL);
       } else {
-        // Если это не число и не URL, используем дефолтное видео
-        videoURL = "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/5393eb68cf205af4cbeaddbc52d6e1d92977259b/src/resources/catjam.webm";
+        // Если это название видео, ищем по названию
+        const foundVideo = defaultVideos.find(video => video.name === videoURL);
+        if (foundVideo) {
+          videoURL = foundVideo.url;
+          console.log('Найдено видео по названию:', videoURL);
+        } else {
+          // Если это не число и не URL, используем дефолтное видео
+          videoURL = "https://github.com/Linaryx/spicetify-cat-jam-synced-twitch/raw/main/src/resources/catjam.webm";
+          console.log('Используем дефолтный URL (fallback):', videoURL);
+        }
       }
     }
 
@@ -382,9 +392,11 @@ async function main() {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   
-  // Загружаем видео из JSON файла
-  defaultVideos = await loadDefaultVideos();
+  // Загружаем дефолтные видео
+  defaultVideos = getDefaultVideos();
   videoOptions = [...defaultVideos.map(video => video.name), "Пользовательское"];
+  console.log('Загружены видео:', defaultVideos);
+  console.log('Опции для выпадающего списка:', videoOptions);
   
   let audioData;
 
@@ -533,12 +545,16 @@ async function main() {
     if (videoSelect && bpmInput) {
       videoSelect.addEventListener("change", () => {
         const selectedIndex = videoSelect.selectedIndex;
+        console.log('Выбран индекс:', selectedIndex, 'из', defaultVideos.length);
+        
         if (selectedIndex >= 0 && selectedIndex < defaultVideos.length) {
           const selectedVideo = defaultVideos[selectedIndex];
+          console.log('Выбрано видео:', selectedVideo);
           bpmInput.value = selectedVideo.bpm.toString();
           // Сохраняем индекс выбранного видео
           settings.setFieldValue(ID_CAT_WEBM_LINK, selectedIndex.toString());
         } else if (selectedIndex === defaultVideos.length) {
+          console.log('Выбрано "Пользовательское"');
           // Если выбрано "Пользовательское", очищаем BPM
           bpmInput.value = "";
           settings.setFieldValue(ID_CAT_WEBM_LINK, selectedIndex.toString());
